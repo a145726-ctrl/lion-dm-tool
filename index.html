@@ -194,7 +194,7 @@ textarea{resize:vertical;min-height:40px;line-height:1.5}
 
     <section class="sec">
       <h2><span class="n">3</span>行程卡片</h2>
-      <p class="hint">出發日期可隨意輸入，例如「7/9、7/23、8/17」或「2027/1/24 1/31」，會自動排成 DM 格式；無法辨識的內容（如「7~8月」）會照原文顯示。</p>
+      <p class="hint">出發日期可隨意輸入，例如「7/9 7/23 8/17」或「2027/1/24 1/31」，會自動排成「2027/1/24、1/31」：每個日期都寫月份，不是今年的日期會加上年份；無法辨識的內容（如「7~8月」）會照原文顯示。</p>
       <div id="cardEds"></div>
       <div class="inline" style="margin-top:10px"><button class="btn sm" type="button" id="btnAddCard">＋ 新增卡片</button><button class="btn sm" type="button" id="btnReset">清空全部卡片</button></div>
     </section>
@@ -269,9 +269,9 @@ function parseDates(txt){
 }
 function formatDates(txt){
   const r=parseDates(txt); if(!r.ok) return {text:String(txt||"").trim(),raw:true};
-  const groups=[]; let cur=null;
-  r.list.forEach(x=>{const k=x.y*100+x.m; if(!cur||cur.k!==k){cur={k,m:x.m,days:[]};groups.push(cur);} cur.days.push(x.d);});
-  return {text:groups.map(g=>g.m+"/"+g.days.join("、")).join("；"),raw:false};
+  let ly=new Date().getFullYear();
+  const parts=r.list.map(x=>{ const pre = x.y!==ly ? x.y+"/" : ""; ly=x.y; return pre+x.m+"/"+x.d; });
+  return {text:parts.join("、"),raw:false};
 }
 
 /* ---------- settings form ---------- */
