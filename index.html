@@ -555,7 +555,7 @@ function loadPptx(){
 }
 async function buildPptx(){
   await loadPptx();
-  const FONT="Microsoft JhengHei", PT=0.75, IN=v=>v/96;
+  const FONT="Noto Sans TC", PT=0.75, IN=v=>v/96;
   const hex=c=>String(c||"#ffffff").replace("#","").toUpperCase();
   const dm=$("#dm"), R=dm.getBoundingClientRect(), k=R.width/794;
   const bx=el=>{const r=el.getBoundingClientRect();return {x:(r.left-R.left)/k,y:(r.top-R.top)/k,w:r.width/k,h:r.height/k};};
