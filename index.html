@@ -117,6 +117,7 @@ textarea{resize:vertical;min-height:40px;line-height:1.5}
     </div>
     <span class="sp"></span>
     <a class="btn" href="https://drive.google.com/file/d/1dCVcy40eCUxiVm5tQaRyssBGX5Af0bdn/view?usp=sharing" target="_blank" rel="noopener" style="text-decoration:none;color:var(--ink)">使用說明</a>
+    <button class="btn" id="btnPptx" type="button">下載 PPT</button>
     <button class="btn" id="btnPng" type="button">下載 PNG</button>
     <button class="btn primary" id="btnPdf" type="button">下載 PDF</button>
   </header>
@@ -514,7 +515,7 @@ async function capture(){
 }
 function fname(ext){const t=(S.cards[0]&&S.cards[0].title)||"DM";const d=new Date();return `多行程DM_${S.n}張_${d.getMonth()+1}${String(d.getDate()).padStart(2,"0")}.${ext}`;}
 async function doExport(kind,force){
-  if(typeof html2canvas!=="function"||!window.jspdf) return toast("下載元件尚未載入，請確認網路後重新整理");
+  if(kind!=="pptx"&&(typeof html2canvas!=="function"||(kind==="pdf"&&!window.jspdf))) return toast("下載元件尚未載入，請確認網路後重新整理");
   if(!force&&checkOverflow()){
     openModal("有卡片內容超出",`<p class="hint">超出的文字下載後會被裁切。建議先調整標示橘框的卡片。</p><div class="inline"><button class="btn" type="button" id="goAnyway">仍要下載</button></div>`);
     $("#goAnyway").onclick=()=>{$("#modal").classList.remove("open");doExport(kind,true);};return;
@@ -523,24 +524,95 @@ async function doExport(kind,force){
     openModal("還沒有 QR Code 連結",`<p class="hint">右上角 QR 框目前是空的。要先在「主視覺與檔期設定」填入活動頁連結嗎？</p><div class="inline"><button class="btn" type="button" id="goAnyway">不放 QR，直接下載</button></div>`);
     $("#goAnyway").onclick=()=>{$("#modal").classList.remove("open");doExport(kind,true);};return;
   }
-  const btn=kind==="png"?$("#btnPng"):$("#btnPdf");const lb=btn.textContent;btn.disabled=true;btn.textContent="產生中…";
+  const btn=kind==="png"?$("#btnPng"):kind==="pptx"?$("#btnPptx"):$("#btnPdf");const lb=btn.textContent;btn.disabled=true;btn.textContent="產生中…";
   try{
-    const canvas=await capture(); let blob;
-    if(kind==="png") blob=await new Promise(r=>canvas.toBlob(r,"image/png"));
+    let canvas=null, blob;
+    if(kind==="pptx") blob=await buildPptx();
+    else{ canvas=await capture(); }
+    if(kind==="pptx"){}
+    else if(kind==="png") blob=await new Promise(r=>canvas.toBlob(r,"image/png"));
     else{const {jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:"p",unit:"mm",format:"a4"});pdf.addImage(canvas.toDataURL("image/jpeg",0.94),"JPEG",0,0,210,297);blob=pdf.output("blob");}
     if(DL){
       try{await DL.save({filename:fname(kind),data:blob});toast("已下載");}
-      catch(e){if(e&&e.code==="declined")toast("已取消下載");else fallback(kind,canvas);}
+      catch(e){if(e&&e.code==="declined")toast("已取消下載");else if(kind==="pptx")openModal("無法下載 PPT","<p class='hint'>這個檢視環境無法存檔，請改用工具的公開網址下載。</p>");else fallback(kind,canvas);}
     } else if(!inClaude){
       const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fname(kind);document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);toast("已下載");
-    } else fallback(kind,canvas);
-  }catch(e){console.error(e);toast("產生失敗，請再試一次");}
+    } else if(kind==="pptx") openModal("無法下載 PPT","<p class='hint'>這個檢視環境無法存檔，請改用工具的公開網址下載。</p>");
+    else fallback(kind,canvas);
+  }catch(e){console.error(e);toast(kind==="pptx"?"PPT 產生失敗：請確認網路後重新整理再試":"產生失敗，請再試一次");}
   finally{btn.disabled=false;btn.textContent=lb;}
 }
 function fallback(kind,canvas){
   openModal("下載",(kind==="pdf"?`<p class="note">這個檢視環境無法直接存 PDF，先提供 PNG。</p>`:"")+`<p class="hint">在圖片上按右鍵「另存圖片」，手機請長按儲存。</p><img alt="DM 預覽" src="${canvas.toDataURL("image/png")}">`);
 }
 $("#btnPng").onclick=()=>doExport("png");
+$("#btnPptx").onclick=()=>doExport("pptx");
+
+/* ---------- PPTX (editable) ---------- */
+function loadPptx(){
+  if(window.PptxGenJS) return Promise.resolve();
+  return new Promise((res,rej)=>{const sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js";sc.onload=res;sc.onerror=rej;document.head.appendChild(sc);});
+}
+async function buildPptx(){
+  await loadPptx();
+  const FONT="Microsoft JhengHei", PT=0.75, IN=v=>v/96;
+  const hex=c=>String(c||"#ffffff").replace("#","").toUpperCase();
+  const dm=$("#dm"), R=dm.getBoundingClientRect(), k=R.width/794;
+  const bx=el=>{const r=el.getBoundingClientRect();return {x:(r.left-R.left)/k,y:(r.top-R.top)/k,w:r.width/k,h:r.height/k};};
+  const ib=b=>({x:IN(b.x),y:IN(b.y),w:IN(b.w),h:IN(b.h)});
+  const fs=el=>parseFloat(getComputedStyle(el).fontSize);
+  const pptx=new PptxGenJS(); pptx.defineLayout({name:"A4P",width:IN(794),height:IN(1123)}); pptx.layout="A4P";
+  pptx.title=(S.cards[0]&&S.cards[0].title)||"DM";
+  const sl=pptx.addSlide(); sl.background={color:hex(S.bg)};
+  const T=(text,b,o)=>sl.addText(text,Object.assign({x:IN(b.x),y:IN(b.y),w:IN(b.w),h:IN(b.h),fontFace:FONT,margin:0,valign:"top",fit:"none",wrap:true,paraSpaceBefore:0,paraSpaceAfter:0},o));
+  // KV, cropped to the page
+  const kv=dm.querySelector(".dm-kv");
+  if(kv&&kv.naturalWidth){
+    const b=bx(kv); const X0=Math.max(0,b.x),Y0=Math.max(0,b.y),X1=Math.min(794,b.x+b.w),Y1=Math.min(1123,b.y+b.h);
+    if(X1>X0&&Y1>Y0){
+      const f=kv.naturalWidth/b.w, sw=Math.round((X1-X0)*f), sh=Math.round((Y1-Y0)*f);
+      const c=document.createElement("canvas"); c.width=sw; c.height=sh;
+      c.getContext("2d").drawImage(kv,(X0-b.x)*f,(Y0-b.y)*f,sw,sh,0,0,sw,sh);
+      sl.addImage({data:c.toDataURL("image/png"),x:IN(X0),y:IN(Y0),w:IN(X1-X0),h:IN(Y1-Y0)});
+    }
+  }
+  // QR box
+  const qr=dm.querySelector(".dm-qr");
+  if(qr){
+    const b=bx(qr); sl.addShape(pptx.ShapeType.roundRect,Object.assign(ib(b),{fill:{color:"FFFFFF"},line:{color:"FFFFFF",width:0},rectRadius:IN(10)}));
+    const qi=qr.querySelector("img"); if(qi) sl.addImage(Object.assign({data:qi.src},ib(bx(qi))));
+    const lb=qr.querySelector(".lb"); if(lb&&lb.textContent) T(lb.textContent,Object.assign(bx(lb),{x:b.x,w:b.w}),{fontSize:fs(lb)*PT,color:"444444",align:"center"});
+  }
+  // cards
+  const lineCol=S.bw?hex(S.bc):"FFFFFF";
+  dm.querySelectorAll(".dm-card").forEach(card=>{
+    const cb=bx(card);
+    sl.addShape(pptx.ShapeType.roundRect,Object.assign(ib(cb),{fill:{color:"FFFFFF"},line:{color:lineCol,width:(S.bw||0)*PT},rectRadius:IN(16)}));
+    const inner=t=>({x:t.x,y:t.y,w:Math.min(t.w*1.04,cb.x+cb.w-t.x-6),h:t.h+2});
+    const title=card.querySelector(".c-title");
+    if(title&&title.textContent) T(title.textContent,inner(bx(title)),{fontSize:fs(title)*PT,bold:true,color:hex(S.tc),lineSpacingMultiple:1.05});
+    const pts=card.querySelector(".c-pts"), inl=card.querySelector(".c-inline");
+    if(pts){ const lis=[...pts.querySelectorAll("li")].map(li=>"．"+li.textContent.replace(/^．/,""));
+      T(lis.map((t,i)=>({text:t,options:{breakLine:i<lis.length-1}})),inner(bx(pts)),{fontSize:fs(pts)*PT,bold:true,color:"2B2B2B",lineSpacingMultiple:1.1}); }
+    if(inl&&inl.textContent) T(inl.textContent,inner(bx(inl)),{fontSize:fs(inl)*PT,bold:true,color:"2B2B2B",lineSpacingMultiple:1.1});
+    const info=card.querySelector(".c-info");
+    if(info&&info.children.length){ const rows=[...info.children].map(d=>d.textContent);
+      T(rows.map((t,i)=>({text:t,options:{breakLine:i<rows.length-1}})),inner(bx(info)),{fontSize:fs(info)*PT,color:"555555",lineSpacingMultiple:1.05}); }
+    const pr=card.querySelector(".c-price");
+    if(pr){ const b=bx(pr), y=pr.querySelector(".y"), n=pr.querySelector(".num"), q=pr.querySelector(".q");
+      const pb={x:cb.x+12,y:b.y-3,w:cb.w-28,h:b.h+6};
+      T([{text:y.textContent,options:{fontSize:fs(y)*PT,bold:true}},{text:" "+n.textContent+" ",options:{fontSize:fs(n)*PT,bold:true}},{text:q.textContent,options:{fontSize:fs(q)*PT,bold:true}}],pb,{color:hex(S.pc),align:"right",valign:"bottom"}); }
+  });
+  // footer
+  const ft=dm.querySelector(".dm-foot");
+  if(ft){
+    sl.addShape(pptx.ShapeType.rect,Object.assign(ib(bx(ft)),{fill:{color:"FFFFFF"},line:{color:"FFFFFF",width:0}}));
+    const lg=ft.querySelector(".logo"); if(lg) sl.addImage(Object.assign({data:lg.src},ib(bx(lg))));
+    const ds=ft.querySelector(".disc"); if(ds) T(ds.textContent,bx(ds),{fontSize:fs(ds)*PT,color:"444444",align:"right"});
+    const bxx=ft.querySelector(".box"); if(bxx) sl.addShape(pptx.ShapeType.roundRect,Object.assign(ib(bx(bxx)),{fill:{type:"none"},line:{color:"C9CDD0",width:1.1,dashType:"dash"},rectRadius:IN(10)}));
+  }
+  return await pptx.write({outputType:"blob"});
+}
 $("#btnPdf").onclick=()=>doExport("pdf");
 
 /* ---------- drag KV on preview ---------- */
